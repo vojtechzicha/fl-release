@@ -1,5 +1,6 @@
 import { Home, Settings, Upload } from 'lucide-react'
 import { Logo } from './logo'
+import { UserProfile } from './user-profile'
 import {
   Sidebar,
   SidebarContent,
@@ -20,15 +21,18 @@ import {
   SelectValue,
 } from '~/components/ui/select'
 
+import { UserProfileProps } from './user-profile'
+
 interface LayoutProps {
   children: React.ReactNode
+  userProfileData: UserProfileProps
 }
 
-export function Layout({ children }: LayoutProps) {
+export function Layout({ children, userProfileData }: LayoutProps) {
   return (
     <SidebarProvider>
       <div className='flex min-h-screen'>
-        <Sidebar>
+        <Sidebar className='w-64 flex-shrink-0'>
           <SidebarHeader className='border-b px-4 py-3'>
             <div className='flex items-center gap-2 px-2'>
               <Logo />
@@ -45,7 +49,7 @@ export function Layout({ children }: LayoutProps) {
               </div>
             </div>
           </SidebarHeader>
-          <SidebarContent>
+          <SidebarContent className='p-4'>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
@@ -74,24 +78,36 @@ export function Layout({ children }: LayoutProps) {
             </SidebarMenu>
           </SidebarContent>
         </Sidebar>
-        <div className='flex flex-1 flex-col'>
-          <header className='sticky top-0 flex h-14 items-center justify-between border-b bg-background px-6'>
-            <SidebarTrigger />
-            <div className='flex items-center justify-center flex-1'>
-              <Input
-                type='search'
-                placeholder='Type Ctrl + Space for search and recent'
-                className='h-9 w-[400px] max-w-full'
+      </div>
+      <div className='flex-1 flex flex-col min-w-0 container'>
+        <header className='sticky top-0 z-10 flex h-14 items-center border-b bg-background'>
+          <div className='flex w-full items-center justify-between px-4'>
+            <div className='flex items-center gap-4'>
+              <SidebarTrigger />
+              <div className='w-[400px]'>
+                <Input
+                  type='search'
+                  placeholder='Type Ctrl + Space for search and recent'
+                  className='h-9'
+                />
+              </div>
+            </div>
+            <div className='flex items-center gap-4'>
+              <Button variant='outline' size='sm'>
+                Help
+              </Button>
+              <UserProfile
+                username={userProfileData.username}
+                avatarUrl={userProfileData.avatarUrl}
               />
             </div>
-            <Button variant='outline' size='sm'>
-              Help
-            </Button>
-          </header>
-          <main className='flex-1 overflow-auto'>
-            <div className='mx-auto p-6'>{children}</div>
-          </main>
-        </div>
+          </div>
+        </header>
+        <main className='flex-1 overflow-auto'>
+          <div className='mx-auto max-w-screen-xl px-4 py-6 container'>
+            {children}
+          </div>
+        </main>
       </div>
     </SidebarProvider>
   )

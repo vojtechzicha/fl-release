@@ -7,11 +7,16 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useLoaderData,
+  useLocation,
 } from '@remix-run/react'
+import type { LoaderFunction } from '@remix-run/node'
 
 import type { LinksFunction } from '@remix-run/node'
 
 import './tailwind.css'
+import { getGitLabUser } from './services/gitlab.server'
+import { getUserTokens } from './services/user.server'
 
 export const meta: MetaFunction = () => {
   return [
@@ -33,7 +38,26 @@ export const links: LinksFunction = () => [
   },
 ]
 
+export const loader: LoaderFunction = async ({ request }) => {
+  const user = await getUserTokens(request)
+
+  if (!user) {
+    return null
+  }
+
+  const gitLabUser = await getGitLabUser(user.accessToken, request)
+
+  return {
+    username: gitLabUser.username,
+    avatarUrl: gitLabUser.avatar_url,
+  }
+}
+
 export default function App() {
+  const location = useLocation()
+  const isLoginPage = location.pathname === '/login'
+  const userProfileData = useLoaderData<typeof loader>()
+
   return (
     <html lang='en'>
       <head>
@@ -43,11 +67,15 @@ export default function App() {
         <Links />
       </head>
       <body>
-        <Layout>
-          <div className='max-w-5xl mx-auto'>
-            <Outlet />
-          </div>
-        </Layout>
+        {isLoginPage ? (
+          <Outlet />
+        ) : (
+          <Layout userProfileData={userProfileData}>
+            <div className='max-w-5xl mx-auto'>
+              <Outlet />
+            </div>
+          </Layout>
+        )}
         <ScrollRestoration />
         <Scripts />
         <LiveReload />
