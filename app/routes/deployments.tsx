@@ -8,6 +8,7 @@ import {
   Form,
   Link,
   Outlet,
+  useActionData,
   useLoaderData,
   useNavigation,
 } from '@remix-run/react'
@@ -18,6 +19,8 @@ import {
   RefreshCw,
   Loader,
   Loader2,
+  XCircle,
+  RefreshCcw,
 } from 'lucide-react'
 import {
   Table,
@@ -39,8 +42,10 @@ import {
 } from '~/components/ui/dropdown-menu'
 import { getUserTokens } from '~/services/user.server'
 import {
+  deployEnvironment,
   DeploymentInfoData,
   DeploymentInfoVersions,
+  deployRelease,
   getDeploymentInfo,
   getGitLabUser,
   VersionInfo,
@@ -55,8 +60,11 @@ import {
 } from '~/components/ui/tooltip'
 import {
   EnivornmnetUpdateInfo,
+  getUpdates,
   getUpdatesForEnvironment,
 } from '~/services/logic'
+import { toast } from 'sonner'
+import { useRevalidateOnFocus, useRevalidateOnInterval } from '~/utils/hooks'
 
 // Loader function to fetch deployment data
 export const loader: LoaderFunction = async ({ request }) => {
@@ -72,16 +80,56 @@ export const loader: LoaderFunction = async ({ request }) => {
 }
 
 export const action: ActionFunction = async ({ request }) => {
-  return new Promise(resolve => {
-    setTimeout(() => {
-      resolve(redirect('/login'))
-    }, 5000)
-  })
+  const user = await getUserTokens(request)
+  if (!user) throw redirect('/login')
+
+  const formData = await request.clone().formData()
+  const formType = formData.get('formType')
+
+  if (formType === 'deploy-release') {
+    const targetEnvironment = formData.get('targetEnvironment') as string
+    const releaseName = formData.get('releaseName') as string
+    const tenantId = formData.get('tenantId') as string
+
+    await deployRelease(
+      user.accessToken,
+      request,
+      tenantId,
+      targetEnvironment,
+      releaseName
+    )
+
+    toast.success('Deployment initiated')
+  } else if (formType === 'deploy-environment-release') {
+    const targetEnvironment = formData.get('targetEnvironment') as string
+    const sourceEnvironment = formData.get('sourceEnvironment') as string
+
+    await deployEnvironment(
+      user.accessToken,
+      request,
+      sourceEnvironment,
+      targetEnvironment
+    )
+
+    toast.success(
+      `Pushing from ${sourceEnvironment} to ${targetEnvironment} initiated`
+    )
+  } else {
+    return new Promise(resolve => {
+      setTimeout(() => {
+        resolve(redirect('/deployments'))
+      }, 5000)
+    })
+  }
 }
 
 export default function DeploymentsRoute() {
   const { deployments } = useLoaderData<typeof loader>()
-  const navigation = useNavigation()
+
+  useRevalidateOnInterval({ enabled: true, interval: 10000 })
+  useRevalidateOnFocus({ enabled: true })
+
+  const allUpdates = [...getUpdates(deployments)]
 
   return (
     <div className='space-y-6 max-w-5xl mx-auto'>
@@ -99,7 +147,17 @@ export default function DeploymentsRoute() {
               <TableRow className='hover:bg-transparent'>
                 <TableHead className='w-[200px]'>Component</TableHead>
                 {environments.map(env => (
-                  <TableHead key={env.slug}>{env.name}</TableHead>
+                  <TableHead key={env.slug}>
+                    {env.name}{' '}
+                    {allUpdates
+                      .filter(u => u.sourceEnv === env.slug)
+                      .map(update => (
+                        <UpdateAllMenu
+                          sourceEnv={update.sourceEnv}
+                          targetEnv={update.targetEnv}
+                        />
+                      ))}
+                  </TableHead>
                 ))}
               </TableRow>
             </TableHeader>
@@ -121,6 +179,7 @@ export default function DeploymentsRoute() {
                           <VersionCell
                             info={version}
                             environment={env.slug}
+                            tenantId={deployment.tenantId}
                             versions={deployment.versions}
                           />
                         </TableCell>
@@ -144,10 +203,12 @@ export default function DeploymentsRoute() {
 const VersionCell = ({
   info,
   versions,
+  tenantId,
   environment,
 }: {
   info?: VersionInfo
   versions: DeploymentInfoVersions
+  tenantId: string
   environment: string
 }) => {
   if (!info) return null
@@ -206,7 +267,11 @@ const VersionCell = ({
         </TooltipProvider>
       </div>
       {(updates.deployFrom.length > 0 || updates.pushTo.length > 0) && (
-        <UpdateMenu updates={updates} envSlug={environment} />
+        <UpdateMenu
+          updates={updates}
+          tenantId={tenantId}
+          envSlug={environment}
+        />
       )}
     </div>
   )
@@ -214,9 +279,11 @@ const VersionCell = ({
 
 const UpdateMenu = ({
   updates: { deployFrom, pushTo },
+  tenantId,
   envSlug,
 }: {
   updates: EnivornmnetUpdateInfo
+  tenantId: string
   envSlug: string
 }) => {
   return (
@@ -231,6 +298,7 @@ const UpdateMenu = ({
           <DropdownMenuItem asChild>
             <Form method='post'>
               <input type='hidden' name='formType' value='deploy-release' />
+              <input type='hidden' name='projectId' value={tenantId} />
               <input type='hidden' name='targetEnvironment' value={envSlug} />
               <input type='hidden' name='releaseName' value={update.version} />
               <Button variant='secondary' type='submit'>
@@ -244,6 +312,7 @@ const UpdateMenu = ({
           <DropdownMenuItem asChild>
             <Form method='post'>
               <input type='hidden' name='formType' value='deploy-release' />
+              <input type='hidden' name='projectId' value={tenantId} />
               <input
                 type='hidden'
                 name='targetEnvironment'
@@ -257,6 +326,40 @@ const UpdateMenu = ({
             </Form>
           </DropdownMenuItem>
         ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+const UpdateAllMenu = ({
+  sourceEnv,
+  targetEnv,
+}: {
+  sourceEnv: string
+  targetEnv: string
+}) => {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant='ghost' size='sm' className='h-8 w-8 p-0'>
+          <MoreHorizontal className='h-4 w-4' />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align='end'>
+        <DropdownMenuItem asChild>
+          <Form method='post'>
+            <input
+              type='hidden'
+              name='formType'
+              value='deploy-environment-release'
+            />
+            <input type='hidden' name='targetEnvironment' value={targetEnv} />
+            <input type='hidden' name='sourceEnvironment' value={sourceEnv} />
+            <Button variant='secondary' type='submit'>
+              Push to <code>{targetEnv}</code>
+            </Button>
+          </Form>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -311,6 +414,10 @@ const Legend = () => {
           <span>Deployment in progress</span>
         </div>
         <div className='flex items-center gap-1.5'>
+          <XCircle className='w-3.5 h-3.5 text-red-500/70' />
+          <span>Deployment failed</span>
+        </div>
+        <div className='flex items-center gap-1.5'>
           <Loader2 className='w-3.5 h-3.5 text-blue-500/70 animate-spin' />
           <span>Data Loading from Server</span>
         </div>
@@ -318,6 +425,10 @@ const Legend = () => {
           <ClipboardList className='w-3.5 h-3.5 opacity-50' />
           <span>View changelog</span>
         </div>
+      </div>
+      <div className='mt-2 flex items-center gap-1.5 text-xs text-muted-foreground px-2'>
+        <RefreshCcw className='w-3.5 h-3.5 text-blue-500/70' />
+        <span>Dashboard auto-updates every 10s</span>
       </div>
     </div>
   )

@@ -1,2 +1,2 @@
-GET https://gitlab.eman.cz/api/v4/projects/1688/environments/754
-Authorization: Bearer f2e4f6b9baba65f70c1f27086083adcb1074c459ab153a429df4ba788ae79a70
+GET https://gitlab.eman.cz/api/v4/projects/fe-demo/environments/
+Authorization: Bearer 025cc36deb63cb0eca6eaf6ef415fb2e605b861eb9ebc8971b2844a6f8f03c25

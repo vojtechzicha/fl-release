@@ -2,6 +2,7 @@ import { version } from 'react'
 import { environments, projects } from './config'
 import { logoutSession } from './user.server'
 import { parseISO } from 'date-fns'
+import { getEnvironmentIconStatus, shouldYouUpdate } from './logic'
 
 interface GitLabUser {
   username: string
@@ -26,12 +27,16 @@ export async function getGitLabUser(
 export type VersionInfo = {
   version: string
   timestamp: Date
-  status: 'success' | 'pending' | 'update-waiting'
+  status: 'success' | 'pending' | 'update-waiting' | 'failed'
   type: 'ci' | 'test' | 'release'
 }
 export type DeploymentInfoVersions = { [key: string]: VersionInfo }
+type DeploymentInfoVersionsWithDeployment = {
+  [key: string]: VersionInfo & { lastDeployment: any }
+}
 export type DeploymentInfoData = {
   tenant: string
+  tenantId: string
   versions: DeploymentInfoVersions
 }
 
@@ -89,7 +94,7 @@ export async function getDeploymentInfo(
         request,
         `api/v4/projects/${project.projectId}/environments`
       ).then(res => res.json())
-      let versions: DeploymentInfoVersions = {}
+      let versions: DeploymentInfoVersionsWithDeployment = {}
 
       for (let env of environments) {
         const envSummary = environmentDetails.find(
@@ -110,8 +115,9 @@ export async function getDeploymentInfo(
               timestamp: parseISO(
                 envDetail.last_deployment.deployable.started_at
               ),
-              status: 'success',
+              status: 'failed',
               type: env.type,
+              lastDeployment: envDetail.last_deployment,
             } as const
           }
         } else {
@@ -121,15 +127,27 @@ export async function getDeploymentInfo(
               timestamp: parseISO(
                 envDetail.last_deployment.deployable.started_at
               ),
-              status: 'success',
+              status: 'failed',
               type: env.type,
+              lastDeployment: envDetail.last_deployment,
             } as const
           }
         }
       }
 
+      for (let versionKey of Object.keys(versions)) {
+        versions[versionKey].status =
+          getEnvironmentIconStatus(
+            versions[versionKey].lastDeployment,
+            versionKey,
+            versions[versionKey].type,
+            versions
+          ) ?? 'failed'
+      }
+
       return {
         tenant: project.name,
+        tenantId: project.projectId,
         versions,
       }
     })
@@ -168,4 +186,85 @@ export async function gitlabFetch(
     // }
   }
   return res
+}
+
+export async function deployRelease(
+  accessToken: string,
+  request: Request,
+  projectId: string,
+  envSlug: string,
+  version: string
+) {
+  console.log('Deploying release', projectId, envSlug, version)
+
+  // First get the pipeline with correct ref
+  const pipelines = await gitlabFetch(
+      accessToken,
+      request,
+      `api/v4/projects/${projectId}/pipelines`
+    ).then(res => res.json()),
+    pipeline = pipelines.find((p: any) => p.ref === version)
+
+  if (!pipeline) throw new Error('Unknown pipeline')
+
+  const jobName = `deploy_${envSlug}`,
+    pipelineJobs = await gitlabFetch(
+      accessToken,
+      request,
+      `api/v4/projects/${projectId}/pipelines/${pipeline.id}/jobs`
+    ).then(res => res.json()),
+    job = pipelineJobs.find((j: any) => j.name === jobName)
+
+  if (!job) throw new Error('Unknown job')
+  const result = await gitlabFetch(
+    accessToken,
+    request,
+    `api/v4/projects/${projectId}/jobs/${job.id}/play`,
+    { method: 'POST' }
+  )
+
+  console.log(result)
+
+  return true
+}
+
+export async function deployEnvironment(
+  accessToken: string,
+  request: Request,
+  sourceEnvironment: string,
+  targetEnvironment: string
+) {
+  const deployments = await getDeploymentInfo(accessToken, request)
+
+  for (const project of projects) {
+    const info = deployments.find(d => d.tenantId === project.projectId)
+
+    if (
+      !info ||
+      !info.versions[sourceEnvironment] ||
+      !info.versions[targetEnvironment]
+    )
+      continue
+
+    const sourceVersion = info.versions[sourceEnvironment].version,
+      targetVersion = info.versions[targetEnvironment].version
+
+    if (shouldYouUpdate(sourceVersion, targetVersion)) {
+      await deployRelease(
+        accessToken,
+        request,
+        project.projectId,
+        targetEnvironment,
+        sourceVersion
+      )
+    }
+
+    await deployRelease(
+      accessToken,
+      request,
+      project.projectId,
+      targetEnvironment,
+      sourceEnvironment
+    )
+  }
 }

@@ -17,6 +17,7 @@ import type { LinksFunction } from '@remix-run/node'
 import './tailwind.css'
 import { getGitLabUser } from './services/gitlab.server'
 import { getUserTokens } from './services/user.server'
+import { Toaster } from './components/ui/sonner'
 
 export const meta: MetaFunction = () => {
   return [
@@ -77,8 +78,8 @@ export default function App() {
           </Layout>
         )}
         <ScrollRestoration />
+        <Toaster />
         <Scripts />
-        <LiveReload />
       </body>
     </html>
   )
