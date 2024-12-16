@@ -29,9 +29,53 @@ export type VersionInfo = {
   status: 'success' | 'pending' | 'update-waiting'
   type: 'ci' | 'test' | 'release'
 }
+export type DeploymentInfoVersions = { [key: string]: VersionInfo }
 export type DeploymentInfoData = {
   tenant: string
-  versions: { [key: string]: VersionInfo }
+  versions: DeploymentInfoVersions
+}
+
+export type ReleaseChangelog = {
+  projectName: string
+  description: string
+  releaseUrl: string
+  closedMergeRequestsUrl: string
+  editUrl: string
+  openedMergeRequestsUrl: string
+}
+export async function getReleaseChangelog(
+  accessToken: string,
+  request: Request,
+  tagName: string
+) {
+  return (
+    await Promise.all(
+      projects.map(async project => {
+        const releaseDetailsRes = await gitlabFetch(
+          accessToken,
+          request,
+          `api/v4/projects/${project.projectId}/releases/${tagName}`
+        )
+
+        if (!releaseDetailsRes.ok) {
+          return null
+        }
+
+        const releaseDetails = await releaseDetailsRes.json()
+
+        return {
+          projectName: project.name,
+          description: releaseDetails.description,
+          releaseUrl: releaseDetails._links.self,
+          closedMergeRequestsUrl:
+            releaseDetails._links.closed_merge_requests_url,
+          editUrl: releaseDetails._links.edit_url,
+          openedMergeRequestsUrl:
+            releaseDetails._links.opened_merge_requests_url,
+        }
+      })
+    )
+  ).filter(rn => rn !== null)
 }
 
 export async function getDeploymentInfo(
@@ -45,7 +89,7 @@ export async function getDeploymentInfo(
         request,
         `api/v4/projects/${project.projectId}/environments`
       ).then(res => res.json())
-      let versions: { [key: string]: VersionInfo } = {}
+      let versions: DeploymentInfoVersions = {}
 
       for (let env of environments) {
         const envSummary = environmentDetails.find(
@@ -53,18 +97,27 @@ export async function getDeploymentInfo(
         )
         if (envSummary === undefined) continue
 
+        const envDetail = await gitlabFetch(
+          accessToken,
+          request,
+          `api/v4/projects/${project.projectId}/environments/${envSummary.id}`
+        ).then(res => res.json())
+
         if (env.type === 'release') {
-          const envDetail = await gitlabFetch(
-            accessToken,
-            request,
-            `api/v4/projects/${project.projectId}/environments/${envSummary.id}`
-          ).then(res => res.json())
-
-          console.log(envDetail.last_deployment.deployable)
-
           if (envDetail.last_deployment) {
             versions[env.slug] = {
               version: envDetail.last_deployment.ref,
+              timestamp: parseISO(
+                envDetail.last_deployment.deployable.started_at
+              ),
+              status: 'success',
+              type: env.type,
+            } as const
+          }
+        } else {
+          if (envDetail.last_deployment) {
+            versions[env.slug] = {
+              version: envDetail.last_deployment.sha.slice(0, 7),
               timestamp: parseISO(
                 envDetail.last_deployment.deployable.started_at
               ),

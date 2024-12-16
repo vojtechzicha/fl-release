@@ -31,8 +31,6 @@ export const loader: LoaderFunction = async ({ request }) => {
   const session = await getSessionRequest(request),
     user = session.get('accessToken')
 
-  console.log(user)
-
   if (user) throw redirect('/')
   return null
 }

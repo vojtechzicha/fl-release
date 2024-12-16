@@ -1,0 +1,2 @@
+GET https://gitlab.eman.cz/api/v4/projects/1688/releases/v1.6.0
+Authorization: Bearer f2e4f6b9baba65f70c1f27086083adcb1074c459ab153a429df4ba788ae79a70

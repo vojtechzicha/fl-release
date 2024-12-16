@@ -47,16 +47,16 @@ export const projects = [
   {
     name: 'Web App',
     order: 10,
-    projectId: '1688',
+    projectId: '1679',
   },
   {
     name: 'Backend',
     order: 40,
-    projectId: '1688',
+    projectId: '1676',
   },
   {
     name: 'Integration Layer',
     order: 20,
-    projectId: '1688',
+    projectId: '1677',
   },
 ]

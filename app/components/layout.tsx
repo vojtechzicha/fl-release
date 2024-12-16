@@ -53,7 +53,7 @@ export function Layout({ children, userProfileData }: LayoutProps) {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <a href='/'>
+                  <a href='/deployments'>
                     <Home className='h-4 w-4' />
                     <span>Home</span>
                   </a>
